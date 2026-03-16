@@ -1,0 +1,29 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.so
+
+# Virtual environments
+.venv/
+env/
+venv/
+
+# OS
+.DS_Store
+
+# Data (do NOT upload dataset)
+data/raw/
+data/processed/
+
+# Training artifacts
+checkpoints/
+outputs/
+logs/
+
+# Huggingface cache
+.cache/
+
+# VSCode
+.vscode/
