@@ -13,9 +13,11 @@ from eval import run_validation
 from model_utils import build_segformer
 from transforms import get_train_transform, get_val_transform
 
+import os
+from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
-DATA_ROOT = PROJECT_ROOT / "data" / "processed" / "CholecSeg8k"
+DATA_ROOT = Path(os.environ.get("DATA_ROOT", PROJECT_ROOT / "data" / "processed" / "CholecSeg8k"))
 
 IMAGES_DIR = DATA_ROOT / "images"
 MASKS_DIR = DATA_ROOT / "masks"

@@ -2,7 +2,11 @@ from pathlib import Path
 import re
 from collections import Counter
 
-DATA_ROOT = Path("data/processed/CholecSeg8k").resolve()
+import os
+from pathlib import Path
+
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+DATA_ROOT = Path(os.environ.get("DATA_ROOT", PROJECT_ROOT / "data" / "processed" / "CholecSeg8k"))
 IMAGES_DIR = DATA_ROOT / "images"
 SPLITS_DIR = DATA_ROOT / "splits"
 
