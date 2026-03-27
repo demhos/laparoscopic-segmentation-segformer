@@ -8,7 +8,7 @@ from torch.optim import AdamW
 from torch.utils.data import DataLoader, Subset
 from tqdm import tqdm
 
-from datasets import CholecSeg8kDataset
+from cholec_datasets import CholecSeg8kDataset
 from eval import run_validation
 from model_utils import build_segformer
 from transforms import get_train_transform, get_val_transform

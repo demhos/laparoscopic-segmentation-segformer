@@ -1,6 +1,6 @@
 from transformers import SegformerConfig, SegformerForSemanticSegmentation
 
-from datasets import IGNORE_INDEX, NUM_CLASSES
+from cholec_datasets import IGNORE_INDEX, NUM_CLASSES
 
 
 ID2LABEL = {i: f"class_{i}" for i in range(NUM_CLASSES)}
