@@ -8,7 +8,7 @@ from torch.optim import AdamW
 from torch.utils.data import DataLoader, Subset
 from tqdm import tqdm
 
-from cholec_datasets import CholecSeg8kDataset
+from cholec_dataset import CholecSeg8kDataset
 from eval import run_validation
 from model_utils import build_segformer
 from transforms import get_train_transform, get_val_transform
@@ -26,7 +26,7 @@ SPLITS_DIR = DATA_ROOT / "splits"
 TRAIN_SPLIT = SPLITS_DIR / "train.txt"
 VAL_SPLIT = SPLITS_DIR / "val.txt"
 
-CHECKPOINT_DIR = PROJECT_ROOT / "checkpoints"
+CHECKPOINT_DIR = Path(os.environ.get("CHECKPOINT_DIR", PROJECT_ROOT / "checkpoints"))
 CHECKPOINT_DIR.mkdir(parents=True, exist_ok=True)
 
 

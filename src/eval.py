@@ -1,7 +1,7 @@
 import torch
 import torch.nn.functional as F
 
-from cholec_datasets import IGNORE_INDEX, NUM_CLASSES
+from cholec_dataset import IGNORE_INDEX, NUM_CLASSES
 
 
 def compute_batch_miou(

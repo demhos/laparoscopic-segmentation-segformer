@@ -5,7 +5,7 @@ import numpy as np
 import torch
 from torch.utils.data import DataLoader
 
-from cholec_datasets import CholecSeg8kDataset
+from cholec_dataset import CholecSeg8kDataset
 from transforms import get_val_transform
 
 
