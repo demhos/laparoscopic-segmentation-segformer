@@ -1,0 +1,37 @@
+true_class,predicted_as,count
+Gallbladder,Connective Tissue,1667403
+Connective Tissue,Gastrointestinal Tract,1460350
+Grasper,Liver,1266463
+Connective Tissue,Grasper,1176074
+Liver,Grasper,329848
+Gastrointestinal Tract,Connective Tissue,268831
+Grasper,Connective Tissue,244532
+Gallbladder,Grasper,237522
+Grasper,Gallbladder,215561
+Grasper,Gastrointestinal Tract,194065
+Gallbladder,Blood,188331
+Gallbladder,Gastrointestinal Tract,161814
+Gastrointestinal Tract,Grasper,150346
+Gastrointestinal Tract,Liver,134069
+Gallbladder,Hepatic Vein,99712
+Gallbladder,Liver,86852
+Gastrointestinal Tract,Fat,78506
+Connective Tissue,Gallbladder,72813
+Grasper,Blood,62034
+Connective Tissue,Blood,58470
+Connective Tissue,Liver,43618
+Liver,Gastrointestinal Tract,40029
+Gastrointestinal Tract,Gallbladder,13978
+Liver,Gallbladder,13428
+Liver,Connective Tissue,10990
+Gastrointestinal Tract,Blood,6757
+Connective Tissue,Fat,5420
+Gastrointestinal Tract,Cystic Duct,4036
+Connective Tissue,Hepatic Vein,2379
+Liver,Hepatic Vein,2234
+Grasper,Hepatic Vein,1750
+Grasper,Fat,1745
+Gastrointestinal Tract,Hepatic Vein,1239
+Gallbladder,Fat,160
+Connective Tissue,Cystic Duct,97
+Grasper,Cystic Duct,51

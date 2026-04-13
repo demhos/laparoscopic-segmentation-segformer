@@ -33,19 +33,16 @@ def compute_batch_miou(
     if valid_classes.sum() == 0:
         return 0.0
 
-    miou = iou[valid_classes].mean().item()
-    return miou
+    return iou[valid_classes].mean().item()
 
 
 @torch.no_grad()
-def run_validation(model, dataloader, device):
+def run_validation(model, dataloader, device, criterion):
     model.eval()
 
     total_loss = 0.0
     total_miou = 0.0
     total_batches = 0
-
-    criterion = torch.nn.CrossEntropyLoss(ignore_index=IGNORE_INDEX)
 
     for batch in dataloader:
         pixel_values = batch["pixel_values"].to(device).contiguous()
@@ -68,10 +65,7 @@ def run_validation(model, dataloader, device):
         total_miou += miou
         total_batches += 1
 
-    avg_loss = total_loss / max(total_batches, 1)
-    avg_miou = total_miou / max(total_batches, 1)
-
     return {
-        "loss": avg_loss,
-        "miou": avg_miou,
+        "loss": total_loss / max(total_batches, 1),
+        "miou": total_miou / max(total_batches, 1),
     }

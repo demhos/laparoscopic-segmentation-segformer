@@ -1,23 +1,24 @@
 from pathlib import Path
+import os
 import random
 
 import numpy as np
 import torch
 import torch.nn.functional as F
 from torch.optim import AdamW
-from torch.utils.data import DataLoader, Subset
+from torch.utils.data import DataLoader, Subset, WeightedRandomSampler
 from tqdm import tqdm
 
-from cholec_dataset import CholecSeg8kDataset
+from cholec_dataset import CholecSeg8kDataset, NUM_CLASSES, IGNORE_INDEX
 from eval import run_validation
 from model_utils import build_segformer
 from transforms import get_train_transform, get_val_transform
 
-import os
-from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
-DATA_ROOT = Path(os.environ.get("DATA_ROOT", PROJECT_ROOT / "data" / "processed" / "CholecSeg8k"))
+DATA_ROOT = Path(os.environ.get("DATA_ROOT", str(PROJECT_ROOT / "data" / "processed" / "CholecSeg8k")))
+CHECKPOINT_DIR = Path(os.environ.get("CHECKPOINT_DIR", str(PROJECT_ROOT / "checkpoints")))
+CHECKPOINT_DIR.mkdir(parents=True, exist_ok=True)
 
 IMAGES_DIR = DATA_ROOT / "images"
 MASKS_DIR = DATA_ROOT / "masks"
@@ -26,23 +27,17 @@ SPLITS_DIR = DATA_ROOT / "splits"
 TRAIN_SPLIT = SPLITS_DIR / "train.txt"
 VAL_SPLIT = SPLITS_DIR / "val.txt"
 
-CHECKPOINT_DIR = Path(os.environ.get("CHECKPOINT_DIR", PROJECT_ROOT / "checkpoints"))
-CHECKPOINT_DIR.mkdir(parents=True, exist_ok=True)
-
-
 SEED = 42
-IMAGE_SIZE = (384, 384)
-BATCH_SIZE = 2
-NUM_EPOCHS = 10
+IMAGE_SIZE = (512, 512)
+BATCH_SIZE = 4
+NUM_EPOCHS = 20
 LEARNING_RATE = 1e-4
 WEIGHT_DECAY = 1e-4
-NUM_WORKERS = 0
+NUM_WORKERS = 2
 
-# Set this to True for debugging
 OVERFIT_TINY_BATCH = False
 OVERFIT_SAMPLES = 16
-
-IGNORE_INDEX = 255
+USE_WEIGHTED_SAMPLER = True
 
 
 def set_seed(seed: int = SEED) -> None:
@@ -51,6 +46,60 @@ def set_seed(seed: int = SEED) -> None:
     torch.manual_seed(seed)
     if torch.cuda.is_available():
         torch.cuda.manual_seed_all(seed)
+
+
+def compute_class_weights(dataset):
+    counts = np.zeros(NUM_CLASSES, dtype=np.int64)
+
+    for i in range(len(dataset)):
+        labels = dataset[i]["labels"].numpy()
+        valid = labels != IGNORE_INDEX
+        vals = labels[valid]
+        if vals.size > 0:
+            counts += np.bincount(vals, minlength=NUM_CLASSES)
+
+    freqs = counts / np.maximum(counts.sum(), 1)
+
+    weights = np.zeros(NUM_CLASSES, dtype=np.float32)
+    positive = counts > 0
+    weights[positive] = 1.0 / np.sqrt(freqs[positive] + 1e-8)
+
+    if positive.any():
+        weights[positive] = weights[positive] / weights[positive].mean()
+
+    weights = np.clip(weights, 0.25, 5.0)
+
+    print("Class pixel counts:", counts.tolist())
+    print("Class weights:", weights.tolist())
+
+    return torch.tensor(weights, dtype=torch.float32)
+
+
+def build_weighted_sampler(dataset, class_weights: torch.Tensor):
+    sample_weights = []
+
+    cw = class_weights.cpu().numpy()
+
+    for i in range(len(dataset)):
+        labels = dataset[i]["labels"].numpy()
+        valid = labels != IGNORE_INDEX
+        classes_present = np.unique(labels[valid])
+
+        if len(classes_present) == 0:
+            sample_weights.append(1.0)
+            continue
+
+        # prioritize images containing rare classes
+        score = float(np.max(cw[classes_present]))
+        sample_weights.append(score)
+
+    sample_weights = torch.tensor(sample_weights, dtype=torch.double)
+
+    return WeightedRandomSampler(
+        weights=sample_weights,
+        num_samples=len(sample_weights),
+        replacement=True,
+    )
 
 
 def make_dataloaders(pin_memory: bool):
@@ -71,18 +120,27 @@ def make_dataloaders(pin_memory: bool):
     if OVERFIT_TINY_BATCH:
         tiny_indices = list(range(min(OVERFIT_SAMPLES, len(train_dataset))))
         train_dataset = Subset(train_dataset, tiny_indices)
-        val_dataset = Subset(
-            val_dataset,
-            tiny_indices[: min(len(tiny_indices), len(val_dataset))]
-        )
+        val_dataset = Subset(val_dataset, tiny_indices[: min(len(tiny_indices), len(val_dataset))])
 
-    train_loader = DataLoader(
-        train_dataset,
-        batch_size=BATCH_SIZE,
-        shuffle=True,
-        num_workers=NUM_WORKERS,
-        pin_memory=pin_memory,
-    )
+    class_weights = compute_class_weights(train_dataset)
+
+    if USE_WEIGHTED_SAMPLER and not OVERFIT_TINY_BATCH:
+        sampler = build_weighted_sampler(train_dataset, class_weights)
+        train_loader = DataLoader(
+            train_dataset,
+            batch_size=BATCH_SIZE,
+            sampler=sampler,
+            num_workers=NUM_WORKERS,
+            pin_memory=pin_memory,
+        )
+    else:
+        train_loader = DataLoader(
+            train_dataset,
+            batch_size=BATCH_SIZE,
+            shuffle=True,
+            num_workers=NUM_WORKERS,
+            pin_memory=pin_memory,
+        )
 
     val_loader = DataLoader(
         val_dataset,
@@ -92,22 +150,20 @@ def make_dataloaders(pin_memory: bool):
         pin_memory=pin_memory,
     )
 
-    return train_loader, val_loader
+    return train_loader, val_loader, class_weights
 
 
-def train_one_epoch(model, dataloader, optimizer, device):
+def train_one_epoch(model, dataloader, optimizer, device, criterion):
     model.train()
 
     total_loss = 0.0
     total_batches = 0
 
-    criterion = torch.nn.CrossEntropyLoss(ignore_index=IGNORE_INDEX)
-
     pbar = tqdm(dataloader, desc="Training", leave=False)
 
     for batch in pbar:
-        pixel_values = batch["pixel_values"].to(device).contiguous()
-        labels = batch["labels"].to(device).contiguous()
+        pixel_values = batch["pixel_values"].to(device, non_blocking=True).contiguous()
+        labels = batch["labels"].to(device, non_blocking=True).contiguous()
 
         outputs = model(pixel_values=pixel_values)
         logits = outputs.logits
@@ -141,13 +197,14 @@ def main():
 
     pin_memory = (device.type == "cuda")
 
-    train_loader, val_loader = make_dataloaders(pin_memory)
+    train_loader, val_loader, class_weights = make_dataloaders(pin_memory)
 
     model = build_segformer().to(device)
-    optimizer = AdamW(
-        model.parameters(),
-        lr=LEARNING_RATE,
-        weight_decay=WEIGHT_DECAY,
+    optimizer = AdamW(model.parameters(), lr=LEARNING_RATE, weight_decay=WEIGHT_DECAY)
+
+    criterion = torch.nn.CrossEntropyLoss(
+        weight=class_weights.to(device),
+        ignore_index=IGNORE_INDEX,
     )
 
     best_val_miou = -1.0
@@ -155,8 +212,8 @@ def main():
     for epoch in range(1, NUM_EPOCHS + 1):
         print(f"\nEpoch {epoch}/{NUM_EPOCHS}")
 
-        train_loss = train_one_epoch(model, train_loader, optimizer, device)
-        val_metrics = run_validation(model, val_loader, device)
+        train_loss = train_one_epoch(model, train_loader, optimizer, device, criterion)
+        val_metrics = run_validation(model, val_loader, device, criterion)
 
         print(f"Train Loss: {train_loss:.4f}")
         print(f"Val Loss:   {val_metrics['loss']:.4f}")

@@ -8,25 +8,41 @@ from torch.utils.data import Dataset
 
 
 RAW_TO_CONTIGUOUS = {
-    0: 0,
-    5: 1,
-    11: 2,
-    12: 3,
-    13: 4,
-    21: 5,
-    22: 6,
-    23: 7,
-    24: 8,
-    25: 9,
-    31: 10,
-    32: 11,
-    33: 12,
-    50: 13,
-    255: 255,
+    0: 0,     # Black Background
+    5: 1,     # Abdominal Wall
+    11: 2,    # Liver
+    12: 3,    # Gastrointestinal Tract
+    13: 4,    # Fat
+    21: 5,    # Grasper
+    22: 6,    # Connective Tissue
+    23: 7,    # Blood
+    24: 8,    # Cystic Duct
+    25: 9,    # L-hook Electrocautery
+    31: 10,   # Gallbladder
+    32: 11,   # Hepatic Vein
+    33: 12,   # Liver Ligament
+    50: 255,  # ignore / artifact
+    255: 255, # ignore index
 }
 
 IGNORE_INDEX = 255
-NUM_CLASSES = 14
+NUM_CLASSES = 13
+
+CLASS_NAMES = [
+    "Black Background",
+    "Abdominal Wall",
+    "Liver",
+    "Gastrointestinal Tract",
+    "Fat",
+    "Grasper",
+    "Connective Tissue",
+    "Blood",
+    "Cystic Duct",
+    "L-hook Electrocautery",
+    "Gallbladder",
+    "Hepatic Vein",
+    "Liver Ligament",
+]
 
 
 def load_split_file(split_file: str | Path) -> list[str]:
