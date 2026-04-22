@@ -21,11 +21,11 @@ class SegmentationTransform:
         self,
         image_size: Tuple[int, int] = (512, 512),
         train: bool = False,
-        hflip_prob: float = 0.5,
-        brightness_prob: float = 0.5,
-        contrast_prob: float = 0.5,
-        rotate_prob: float = 0.4,
-        max_rotate_deg: float = 10.0,
+        hflip_prob: float = 0.3,
+        brightness_prob: float = 0.3,
+        contrast_prob: float = 0.3,
+        rotate_prob: float = 0.2,
+        max_rotate_deg: float = 5.0,
     ) -> None:
         self.image_size = image_size
         self.train = train

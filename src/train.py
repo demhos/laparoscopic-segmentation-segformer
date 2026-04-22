@@ -6,7 +6,7 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 from torch.optim import AdamW
-from torch.utils.data import DataLoader, Subset, WeightedRandomSampler
+from torch.utils.data import DataLoader, Subset
 from tqdm import tqdm
 
 from cholec_dataset import CholecSeg8kDataset, NUM_CLASSES, IGNORE_INDEX
@@ -37,7 +37,6 @@ NUM_WORKERS = 2
 
 OVERFIT_TINY_BATCH = False
 OVERFIT_SAMPLES = 16
-USE_WEIGHTED_SAMPLER = True
 
 
 def set_seed(seed: int = SEED) -> None:
@@ -60,46 +59,20 @@ def compute_class_weights(dataset):
 
     freqs = counts / np.maximum(counts.sum(), 1)
 
-    weights = np.zeros(NUM_CLASSES, dtype=np.float32)
+    weights = np.ones(NUM_CLASSES, dtype=np.float32)
     positive = counts > 0
     weights[positive] = 1.0 / np.sqrt(freqs[positive] + 1e-8)
 
     if positive.any():
         weights[positive] = weights[positive] / weights[positive].mean()
 
-    weights = np.clip(weights, 0.25, 5.0)
+    # milder weighting than before
+    weights = np.clip(weights, 0.5, 2.0)
 
     print("Class pixel counts:", counts.tolist())
     print("Class weights:", weights.tolist())
 
     return torch.tensor(weights, dtype=torch.float32)
-
-
-def build_weighted_sampler(dataset, class_weights: torch.Tensor):
-    sample_weights = []
-
-    cw = class_weights.cpu().numpy()
-
-    for i in range(len(dataset)):
-        labels = dataset[i]["labels"].numpy()
-        valid = labels != IGNORE_INDEX
-        classes_present = np.unique(labels[valid])
-
-        if len(classes_present) == 0:
-            sample_weights.append(1.0)
-            continue
-
-        # prioritize images containing rare classes
-        score = float(np.max(cw[classes_present]))
-        sample_weights.append(score)
-
-    sample_weights = torch.tensor(sample_weights, dtype=torch.double)
-
-    return WeightedRandomSampler(
-        weights=sample_weights,
-        num_samples=len(sample_weights),
-        replacement=True,
-    )
 
 
 def make_dataloaders(pin_memory: bool):
@@ -120,27 +93,20 @@ def make_dataloaders(pin_memory: bool):
     if OVERFIT_TINY_BATCH:
         tiny_indices = list(range(min(OVERFIT_SAMPLES, len(train_dataset))))
         train_dataset = Subset(train_dataset, tiny_indices)
-        val_dataset = Subset(val_dataset, tiny_indices[: min(len(tiny_indices), len(val_dataset))])
+        val_dataset = Subset(
+            val_dataset,
+            tiny_indices[: min(len(tiny_indices), len(val_dataset))]
+        )
 
     class_weights = compute_class_weights(train_dataset)
 
-    if USE_WEIGHTED_SAMPLER and not OVERFIT_TINY_BATCH:
-        sampler = build_weighted_sampler(train_dataset, class_weights)
-        train_loader = DataLoader(
-            train_dataset,
-            batch_size=BATCH_SIZE,
-            sampler=sampler,
-            num_workers=NUM_WORKERS,
-            pin_memory=pin_memory,
-        )
-    else:
-        train_loader = DataLoader(
-            train_dataset,
-            batch_size=BATCH_SIZE,
-            shuffle=True,
-            num_workers=NUM_WORKERS,
-            pin_memory=pin_memory,
-        )
+    train_loader = DataLoader(
+        train_dataset,
+        batch_size=BATCH_SIZE,
+        shuffle=True,
+        num_workers=NUM_WORKERS,
+        pin_memory=pin_memory,
+    )
 
     val_loader = DataLoader(
         val_dataset,
@@ -151,6 +117,25 @@ def make_dataloaders(pin_memory: bool):
     )
 
     return train_loader, val_loader, class_weights
+
+
+def dice_loss(logits, targets, num_classes, ignore_index=255, smooth=1e-5):
+    probs = torch.softmax(logits, dim=1)
+
+    valid_mask = (targets != ignore_index).unsqueeze(1)  # [B,1,H,W]
+    targets_clean = targets.clone()
+    targets_clean[targets_clean == ignore_index] = 0
+
+    one_hot = F.one_hot(targets_clean, num_classes=num_classes).permute(0, 3, 1, 2).float()
+
+    probs = probs * valid_mask
+    one_hot = one_hot * valid_mask
+
+    intersection = (probs * one_hot).sum(dim=(2, 3))
+    union = probs.sum(dim=(2, 3)) + one_hot.sum(dim=(2, 3))
+
+    dice = (2 * intersection + smooth) / (union + smooth)
+    return 1.0 - dice.mean()
 
 
 def train_one_epoch(model, dataloader, optimizer, device, criterion):
@@ -175,7 +160,9 @@ def train_one_epoch(model, dataloader, optimizer, device, criterion):
             align_corners=False,
         ).contiguous()
 
-        loss = criterion(logits, labels)
+        ce = criterion(logits, labels)
+        d = dice_loss(logits, labels, NUM_CLASSES, ignore_index=IGNORE_INDEX)
+        loss = ce + d
 
         optimizer.zero_grad()
         loss.backward()
@@ -184,7 +171,11 @@ def train_one_epoch(model, dataloader, optimizer, device, criterion):
         total_loss += loss.item()
         total_batches += 1
 
-        pbar.set_postfix(loss=f"{loss.item():.4f}")
+        pbar.set_postfix(
+            loss=f"{loss.item():.4f}",
+            ce=f"{ce.item():.4f}",
+            dice=f"{d.item():.4f}",
+        )
 
     return total_loss / max(total_batches, 1)
 

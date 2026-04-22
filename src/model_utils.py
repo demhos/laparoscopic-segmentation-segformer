@@ -1,10 +1,10 @@
-from transformers import SegformerConfig, SegformerForSemanticSegmentation
+from transformers import SegformerForSemanticSegmentation
 
-from cholec_dataset import IGNORE_INDEX, NUM_CLASSES
+from cholec_dataset import IGNORE_INDEX, NUM_CLASSES, CLASS_NAMES
 
 
-ID2LABEL = {i: f"class_{i}" for i in range(NUM_CLASSES)}
-LABEL2ID = {v: k for k, v in ID2LABEL.items()}
+ID2LABEL = {i: name for i, name in enumerate(CLASS_NAMES)}
+LABEL2ID = {name: i for i, name in ID2LABEL.items()}
 
 
 def build_segformer(model_name: str = "nvidia/segformer-b0-finetuned-ade-512-512"):
